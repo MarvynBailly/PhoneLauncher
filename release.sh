@@ -24,10 +24,10 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 echo "Creating release $VERSION..."
-gh release create "$VERSION" "$APK" \
+gh.exe release create "$VERSION" "$APK" \
     --title "Launcher $VERSION" \
     --notes "Download app-debug.apk and install on your phone."
 
 echo ""
 echo "Done! Download link:"
-gh release view "$VERSION" --json url -q .url
+gh.exe release view "$VERSION" --json url -q .url

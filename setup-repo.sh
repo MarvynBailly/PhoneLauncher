@@ -13,6 +13,6 @@ git add -A
 git commit -m "Initial commit: minimal productivity launcher"
 
 # Create GitHub repo (private by default) and push
-gh repo create PhoneLauncher --private --source=. --push
+gh.exe repo create PhoneLauncher --private --source=. --push
 
 echo "Done! Repo created and pushed."
