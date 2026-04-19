@@ -33,9 +33,11 @@ class TimerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val ch = NotificationChannel("timers", "Timer Tracking", NotificationManager.IMPORTANCE_LOW)
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.deleteNotificationChannel("timers")
+        val ch = NotificationChannel("timers_v2", "Timer Tracking", NotificationManager.IMPORTANCE_DEFAULT)
         ch.setShowBadge(false)
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
+        nm.createNotificationChannel(ch)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -103,7 +105,7 @@ class TimerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, "timers")
+        return NotificationCompat.Builder(this, "timers_v2")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(title)
             .setContentText(elapsed)

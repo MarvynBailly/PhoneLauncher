@@ -61,6 +61,8 @@ data class LauncherSettings(
     val restrictedApps: List<String> = emptyList(),
     val emergencyOverride: Boolean = false,
     val dayResetHour: Int = 5,
+    val useCelsius: Boolean = false,
+    val closingFields: List<ClosingFieldDef> = emptyList(),
 )
 
 data class ThemePreset(
@@ -121,6 +123,13 @@ fun loadSettings(context: Context): LauncherSettings {
             } ?: defaults.restrictedApps,
             emergencyOverride = j.optBoolean("emergencyOverride", defaults.emergencyOverride),
             dayResetHour = j.optInt("dayResetHour", defaults.dayResetHour),
+            useCelsius = j.optBoolean("useCelsius", defaults.useCelsius),
+            closingFields = j.optJSONArray("closingFields")?.let { a ->
+                (0 until a.length()).map {
+                    val f = a.getJSONObject(it)
+                    ClosingFieldDef(f.getString("id"), f.getString("label"), f.getString("type"))
+                }
+            } ?: defaults.closingFields,
         )
     } catch (_: Exception) {
         LauncherSettings()
@@ -141,6 +150,14 @@ fun saveSettings(context: Context, settings: LauncherSettings) {
         put("restrictedApps", JSONArray(settings.restrictedApps))
         put("emergencyOverride", settings.emergencyOverride)
         put("dayResetHour", settings.dayResetHour)
+        put("useCelsius", settings.useCelsius)
+        put("closingFields", JSONArray().apply {
+            settings.closingFields.forEach {
+                put(JSONObject().apply {
+                    put("id", it.id); put("label", it.label); put("type", it.type)
+                })
+            }
+        })
     }
     context.getSharedPreferences("launcher_settings", Context.MODE_PRIVATE)
         .edit().putString("settings", json.toString()).apply()
@@ -347,6 +364,27 @@ fun SettingsScreen(
                 checked = settings.emergencyOverride,
                 onCheckedChange = { onSettingsChanged(settings.copy(emergencyOverride = it)) },
                 colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFFFF5252))
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Temperature Unit", color = textColor, fontSize = 15.sp)
+                Text(
+                    if (settings.useCelsius) "Celsius" else "Fahrenheit",
+                    color = subtleColor,
+                    fontSize = 12.sp
+                )
+            }
+            Switch(
+                checked = settings.useCelsius,
+                onCheckedChange = { onSettingsChanged(settings.copy(useCelsius = it)) },
+                colors = SwitchDefaults.colors(checkedTrackColor = textColor.copy(alpha = 0.3f))
             )
         }
 

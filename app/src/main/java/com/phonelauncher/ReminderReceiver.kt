@@ -12,7 +12,15 @@ import androidx.core.content.ContextCompat
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val title = intent.getStringExtra("task_title") ?: return
+        val taskId = intent.getStringExtra("task_id")
         val minutes = intent.getIntExtra("minutes_before", 0)
+
+        // Skip notification if task is already completed
+        if (taskId != null) {
+            val dayState = loadDayState(context)
+            val task = dayState.tasks.find { it.id == taskId }
+            if (task?.isCompleted == true) return
+        }
 
         val notification = NotificationCompat.Builder(context, "reminders")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)

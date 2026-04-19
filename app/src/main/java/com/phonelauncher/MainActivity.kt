@@ -2,6 +2,7 @@ package com.phonelauncher
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.role.RoleManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -58,11 +59,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -82,10 +86,12 @@ import java.util.UUID
 
 data class AppInfo(val label: String, val packageName: String)
 
-private enum class Screen { HOME, SEARCH, SETTINGS, PLANNING, TASK_EDIT }
+private enum class Screen { HOME, SEARCH, SETTINGS, PLANNING, TASK_EDIT, CLOSING }
 
 class MainActivity : ComponentActivity() {
     var homePressCount by mutableStateOf(0)
+        private set
+    var resumeCount by mutableIntStateOf(0)
         private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,6 +102,11 @@ class MainActivity : ComponentActivity() {
             BackHandler { }
             PhoneLauncherTheme { LauncherScreen(this) }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumeCount++
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -115,6 +126,8 @@ private fun LauncherScreen(activity: MainActivity) {
     var editingTask by remember { mutableStateOf<DayTask?>(null) }
     var screenBeforeEdit by remember { mutableStateOf(Screen.HOME) }
     var blockMessage by remember { mutableStateOf<String?>(null) }
+    var closingState by remember { mutableStateOf(loadClosingState(context)) }
+    var closingIsManual by remember { mutableStateOf(false) }
 
     // Timers & quick actions
     val effectiveDate = remember { getEffectiveDate(settings.dayResetHour) }
@@ -161,26 +174,59 @@ private fun LauncherScreen(activity: MainActivity) {
         }
     }
 
+    // Prompt to set as default launcher
+    val defaultLauncherLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            delay(500)
+            val roleManager = context.getSystemService(RoleManager::class.java)
+            if (!roleManager.isRoleHeld(RoleManager.ROLE_HOME)) {
+                defaultLauncherLauncher.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME))
+            }
+        }
+    }
+
     // Home button → go home
     LaunchedEffect(activity.homePressCount) {
         if (activity.homePressCount > 0) screen = Screen.HOME
     }
 
-    // Day reset check — resets tasks, timers, and quick actions
-    LaunchedEffect(Unit) {
+    // Day reset helper
+    fun performDayReset(carryForwardTaskIds: Set<String> = emptySet()) {
+        val today = getEffectiveDate(settings.dayResetHour)
+        val carryForwardTasks = dayState.tasks
+            .filter { it.id in carryForwardTaskIds }
+            .map { it.copy(id = UUID.randomUUID().toString(), isCompleted = false) }
+        val newTasks = generateDayTasks(templates) + carryForwardTasks
+        dayState = DayState(date = today, tasks = newTasks, planningDone = false)
+        saveDayState(context, dayState)
+        timers.forEach { addToHistory(context, it.name) }
+        timerHistory = loadTimerHistory(context)
+        timers = emptyList()
+        saveTimers(context, timers)
+        quickActions = emptyList()
+        saveQuickActions(context, quickActions, today)
+        screen = Screen.PLANNING
+    }
+
+    // Day reset check — keyed on resumeCount so it re-runs each time the activity resumes
+    LaunchedEffect(activity.resumeCount) {
         val today = getEffectiveDate(settings.dayResetHour)
         if (dayState.date != today) {
-            val newTasks = generateDayTasks(templates)
-            dayState = DayState(date = today, tasks = newTasks, planningDone = false)
-            saveDayState(context, dayState)
-            // Reset timers for new day — save running ones to history first
-            timers.forEach { addToHistory(context, it.name) }
-            timerHistory = loadTimerHistory(context)
-            timers = emptyList()
-            saveTimers(context, timers)
-            // Reset quick actions
-            quickActions = emptyList()
-            saveQuickActions(context, quickActions, today)
+            val cs = loadClosingState(context)
+            if (cs.date == dayState.date && cs.closingDone) {
+                // Closing already done for yesterday, reset with carry-forward
+                val carryIds = cs.taskNotes.filter { it.carryForward }.map { it.taskId }.toSet()
+                performDayReset(carryIds)
+            } else {
+                // Show closing screen for the outgoing day
+                closingState = if (cs.date == dayState.date) cs else ClosingState(date = dayState.date)
+                closingIsManual = false
+                screen = Screen.CLOSING
+            }
+            return@LaunchedEffect
         }
         if (!dayState.planningDone) screen = Screen.PLANNING
     }
@@ -259,6 +305,7 @@ private fun LauncherScreen(activity: MainActivity) {
         else dayState.tasks + taskForDay
         dayState = dayState.copy(tasks = newTasks)
         saveDayState(context, dayState)
+        scheduleReminder(context, taskForDay)
         screen = screenBeforeEdit
     }
 
@@ -385,6 +432,7 @@ private fun LauncherScreen(activity: MainActivity) {
                 timers = timers, quickActions = quickActions,
                 onLaunch = ::launchApp, onUnpin = ::togglePin,
                 onCompleteTask = ::completeTask, onRemoveTask = ::removeTask,
+                onEditTask = { editingTask = it; screenBeforeEdit = Screen.HOME; screen = Screen.TASK_EDIT },
                 onQuickAddTask = ::quickAddTask,
                 onAddTask = { editingTask = null; screenBeforeEdit = Screen.HOME; screen = Screen.TASK_EDIT },
                 onPauseTimer = ::pauseTimer, onShowTimerDetail = { timerDetailFor = it },
@@ -392,7 +440,48 @@ private fun LauncherScreen(activity: MainActivity) {
                 onIncrementAction = ::incrementAction, onDecrementAction = ::decrementAction,
                 onRemoveAction = { quickActions = quickActions.filter { a -> a.id != it.id }; saveQuickActions(context, quickActions, effectiveDate) },
                 onAddCounter = { showNewCounterDialog = true },
-                onSearchClick = { screen = Screen.SEARCH }
+                onSearchClick = { screen = Screen.SEARCH },
+                onCloseDay = {
+                    val cs = loadClosingState(context)
+                    closingState = if (cs.date == dayState.date) cs else ClosingState(date = dayState.date)
+                    closingIsManual = true
+                    screen = Screen.CLOSING
+                }
+            )
+
+            Screen.CLOSING -> NightlyClosingScreen(
+                settings = settings,
+                dayTasks = dayState.tasks,
+                timers = timers,
+                quickActions = quickActions,
+                closingState = closingState,
+                isManual = closingIsManual,
+                onComplete = { state ->
+                    closingState = state
+                    saveClosingState(context, closingState)
+                    val today = getEffectiveDate(settings.dayResetHour)
+                    if (dayState.date != today) {
+                        val carryIds = state.taskNotes.filter { it.carryForward }.map { it.taskId }.toSet()
+                        performDayReset(carryIds)
+                    } else {
+                        screen = Screen.HOME
+                    }
+                },
+                onSkip = {
+                    val skipped = ClosingState(date = closingState.date, closingDone = true)
+                    saveClosingState(context, skipped)
+                    closingState = skipped
+                    val today = getEffectiveDate(settings.dayResetHour)
+                    if (dayState.date != today) {
+                        performDayReset()
+                    } else {
+                        screen = Screen.HOME
+                    }
+                },
+                onFieldDefsChanged = { defs ->
+                    settings = settings.copy(closingFields = defs)
+                    saveSettings(context, settings)
+                }
             )
 
             Screen.SEARCH -> SearchScreen(
@@ -462,6 +551,7 @@ private fun HomeScreen(
     onUnpin: (AppInfo) -> Unit,
     onCompleteTask: (DayTask) -> Unit,
     onRemoveTask: (DayTask) -> Unit,
+    onEditTask: (DayTask) -> Unit,
     onQuickAddTask: (String) -> Unit,
     onAddTask: () -> Unit,
     onPauseTimer: (TimerEntry) -> Unit,
@@ -473,11 +563,24 @@ private fun HomeScreen(
     onRemoveAction: (QuickAction) -> Unit,
     onAddCounter: () -> Unit,
     onSearchClick: () -> Unit,
+    onCloseDay: () -> Unit,
 
 ) {
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (available.y < -500f) {
+                    onSearchClick()
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .nestedScroll(nestedScrollConnection)
             .systemBarsPadding()
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -505,7 +608,7 @@ private fun HomeScreen(
 
             // Tasks
             dayTasks.forEach { task ->
-                TaskRow(task, settings, rewardSessions, onCompleteTask, onRemoveTask)
+                TaskRow(task, settings, rewardSessions, onCompleteTask, onRemoveTask, onEditTask)
             }
 
             // Unified add row
@@ -517,6 +620,16 @@ private fun HomeScreen(
             pinnedApps.forEach { app ->
                 PinnedAppItem(app, settings, rewardSessions, onLaunch = { onLaunch(app) }, onUnpin = { onUnpin(app) })
             }
+
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Close day",
+                modifier = Modifier
+                    .clickable { onCloseDay() }
+                    .padding(vertical = 4.dp),
+                color = Color(settings.clockColor).copy(alpha = 0.2f),
+                fontSize = 13.sp
+            )
         }
 
         SearchBar(settings, onClick = onSearchClick)
@@ -524,19 +637,24 @@ private fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TaskRow(
     task: DayTask,
     settings: LauncherSettings,
     rewardSessions: List<RewardSession>,
     onComplete: (DayTask) -> Unit,
-    onRemove: (DayTask) -> Unit
+    onRemove: (DayTask) -> Unit,
+    onEdit: (DayTask) -> Unit
 ) {
     val textColor = Color(settings.clockColor)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onComplete(task) }
+            .combinedClickable(
+                onClick = { onComplete(task) },
+                onLongClick = { if (!task.isCompleted) onEdit(task) }
+            )
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -712,12 +830,12 @@ private fun Temperature(settings: LauncherSettings) {
         ActivityResultContracts.RequestPermission()
     ) { granted -> permissionGranted = granted }
 
-    LaunchedEffect(permissionGranted) {
+    LaunchedEffect(permissionGranted, settings.useCelsius) {
         if (!permissionGranted) {
             permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
             return@LaunchedEffect
         }
-        temp = withContext(Dispatchers.IO) { fetchTemperature(context) }
+        temp = withContext(Dispatchers.IO) { fetchTemperature(context, settings.useCelsius) }
     }
 
     if (temp != null) {
@@ -726,20 +844,22 @@ private fun Temperature(settings: LauncherSettings) {
 }
 
 @SuppressLint("MissingPermission")
-private suspend fun fetchTemperature(context: Context): String? {
+private suspend fun fetchTemperature(context: Context, useCelsius: Boolean): String? {
     return try {
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
             ?: lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             ?: requestFreshLocation(lm) ?: return null
+        val unit = if (useCelsius) "celsius" else "fahrenheit"
         val url = URL(
-            "https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true&temperature_unit=fahrenheit"
+            "https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true&temperature_unit=$unit"
         )
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 5000; conn.readTimeout = 5000
         val json = conn.inputStream.bufferedReader().readText()
         conn.disconnect()
-        "${JSONObject(json).getJSONObject("current_weather").getDouble("temperature").toInt()}\u00B0"
+        val label = if (useCelsius) "C" else "F"
+        "${JSONObject(json).getJSONObject("current_weather").getDouble("temperature").toInt()}\u00B0$label"
     } catch (_: Exception) { null }
 }
 

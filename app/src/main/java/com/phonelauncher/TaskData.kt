@@ -51,6 +51,29 @@ data class DayState(
     val planningDone: Boolean = false,
 )
 
+// Nightly closing models
+
+data class ClosingFieldDef(
+    val id: String = UUID.randomUUID().toString(),
+    val label: String,
+    val type: String, // "stars" or "text"
+)
+
+data class TaskClosingNote(
+    val taskId: String,
+    val reason: String = "",
+    val carryForward: Boolean = false,
+)
+
+data class ClosingState(
+    val date: String = "",
+    val dayRating: Int = 0,
+    val customRatings: Map<String, Int> = emptyMap(),
+    val customTexts: Map<String, String> = emptyMap(),
+    val taskNotes: List<TaskClosingNote> = emptyList(),
+    val closingDone: Boolean = false,
+)
+
 // Helpers
 
 fun getEffectiveDate(resetHour: Int = 5): String {
@@ -122,6 +145,7 @@ fun scheduleReminder(context: Context, task: DayTask) {
 
     val intent = Intent(context, ReminderReceiver::class.java).apply {
         putExtra("task_title", task.title)
+        putExtra("task_id", task.id)
         putExtra("minutes_before", task.reminderMinutes)
     }
     val pi = PendingIntent.getBroadcast(
@@ -240,3 +264,59 @@ private fun dayTaskFromJson(j: JSONObject) = DayTask(
     rewardMinutes = j.optInt("rmin", 15),
     isCompleted = j.optBoolean("done", false),
 )
+
+// Closing state persistence
+
+fun loadClosingState(context: Context): ClosingState {
+    val json = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getString("closing_state", null) ?: return ClosingState()
+    return try {
+        val j = JSONObject(json)
+        ClosingState(
+            date = j.optString("date", ""),
+            dayRating = j.optInt("dayRating", 0),
+            customRatings = j.optJSONObject("customRatings")?.let { cr ->
+                cr.keys().asSequence().associateWith { cr.getInt(it) }
+            } ?: emptyMap(),
+            customTexts = j.optJSONObject("customTexts")?.let { ct ->
+                ct.keys().asSequence().associateWith { ct.getString(it) }
+            } ?: emptyMap(),
+            taskNotes = j.optJSONArray("taskNotes")?.let { a ->
+                (0 until a.length()).map {
+                    val n = a.getJSONObject(it)
+                    TaskClosingNote(
+                        taskId = n.getString("taskId"),
+                        reason = n.optString("reason", ""),
+                        carryForward = n.optBoolean("carryForward", false),
+                    )
+                }
+            } ?: emptyList(),
+            closingDone = j.optBoolean("closingDone", false),
+        )
+    } catch (_: Exception) { ClosingState() }
+}
+
+fun saveClosingState(context: Context, state: ClosingState) {
+    val json = JSONObject().apply {
+        put("date", state.date)
+        put("dayRating", state.dayRating)
+        put("customRatings", JSONObject().apply {
+            state.customRatings.forEach { (k, v) -> put(k, v) }
+        })
+        put("customTexts", JSONObject().apply {
+            state.customTexts.forEach { (k, v) -> put(k, v) }
+        })
+        put("taskNotes", JSONArray().apply {
+            state.taskNotes.forEach {
+                put(JSONObject().apply {
+                    put("taskId", it.taskId)
+                    put("reason", it.reason)
+                    put("carryForward", it.carryForward)
+                })
+            }
+        })
+        put("closingDone", state.closingDone)
+    }
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .edit().putString("closing_state", json.toString()).apply()
+}
