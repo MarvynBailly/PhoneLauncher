@@ -97,6 +97,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createNotificationChannel(this)
+        createTimerPromptChannel(this)
+        scheduleTimerPrompt(this)
         enableEdgeToEdge()
         setContent {
             BackHandler { }
@@ -441,6 +443,7 @@ private fun LauncherScreen(activity: MainActivity) {
                 onRemoveAction = { quickActions = quickActions.filter { a -> a.id != it.id }; saveQuickActions(context, quickActions, effectiveDate) },
                 onAddCounter = { showNewCounterDialog = true },
                 onSearchClick = { screen = Screen.SEARCH },
+                onStartDay = { screen = Screen.PLANNING },
                 onCloseDay = {
                     val cs = loadClosingState(context)
                     closingState = if (cs.date == dayState.date) cs else ClosingState(date = dayState.date)
@@ -563,6 +566,7 @@ private fun HomeScreen(
     onRemoveAction: (QuickAction) -> Unit,
     onAddCounter: () -> Unit,
     onSearchClick: () -> Unit,
+    onStartDay: () -> Unit,
     onCloseDay: () -> Unit,
 
 ) {
@@ -622,14 +626,24 @@ private fun HomeScreen(
             }
 
             Spacer(Modifier.height(16.dp))
-            Text(
-                "Close day",
-                modifier = Modifier
-                    .clickable { onCloseDay() }
-                    .padding(vertical = 4.dp),
-                color = Color(settings.clockColor).copy(alpha = 0.2f),
-                fontSize = 13.sp
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "Start day",
+                    modifier = Modifier
+                        .clickable { onStartDay() }
+                        .padding(vertical = 4.dp),
+                    color = Color(settings.clockColor).copy(alpha = 0.2f),
+                    fontSize = 13.sp
+                )
+                Text(
+                    "Close day",
+                    modifier = Modifier
+                        .clickable { onCloseDay() }
+                        .padding(vertical = 4.dp),
+                    color = Color(settings.clockColor).copy(alpha = 0.2f),
+                    fontSize = 13.sp
+                )
+            }
         }
 
         SearchBar(settings, onClick = onSearchClick)
