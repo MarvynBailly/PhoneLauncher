@@ -86,7 +86,7 @@ import java.util.UUID
 
 data class AppInfo(val label: String, val packageName: String)
 
-private enum class Screen { HOME, SEARCH, SETTINGS, PLANNING, TASK_EDIT, CLOSING }
+private enum class Screen { HOME, SEARCH, SETTINGS, PLANNING, TASK_EDIT, CLOSING, STATS }
 
 class MainActivity : ComponentActivity() {
     var homePressCount by mutableStateOf(0)
@@ -444,6 +444,7 @@ private fun LauncherScreen(activity: MainActivity) {
                 onAddCounter = { showNewCounterDialog = true },
                 onSearchClick = { screen = Screen.SEARCH },
                 onStartDay = { screen = Screen.PLANNING },
+                onStatsClick = { screen = Screen.STATS },
                 onCloseDay = {
                     val cs = loadClosingState(context)
                     closingState = if (cs.date == dayState.date) cs else ClosingState(date = dayState.date)
@@ -457,6 +458,9 @@ private fun LauncherScreen(activity: MainActivity) {
                 dayTasks = dayState.tasks,
                 timers = timers,
                 quickActions = quickActions,
+                usageStats = remember(activity.resumeCount, screen) {
+                    if (hasUsageStatsPermission(context)) loadUsageStats(context, settings.dayResetHour) else null
+                },
                 closingState = closingState,
                 isManual = closingIsManual,
                 onComplete = { state ->
@@ -491,6 +495,12 @@ private fun LauncherScreen(activity: MainActivity) {
                 settings = settings, apps = apps, pinnedPackages = settings.pinnedApps.toSet(),
                 onLaunch = ::launchApp, onTogglePin = ::togglePin,
                 onSettingsClick = { screen = Screen.SETTINGS },
+                onDismiss = { screen = Screen.HOME }
+            )
+
+            Screen.STATS -> StatsScreen(
+                settings = settings,
+                resumeKey = activity.resumeCount,
                 onDismiss = { screen = Screen.HOME }
             )
 
@@ -567,6 +577,7 @@ private fun HomeScreen(
     onAddCounter: () -> Unit,
     onSearchClick: () -> Unit,
     onStartDay: () -> Unit,
+    onStatsClick: () -> Unit,
     onCloseDay: () -> Unit,
 
 ) {
@@ -631,6 +642,14 @@ private fun HomeScreen(
                     "Start day",
                     modifier = Modifier
                         .clickable { onStartDay() }
+                        .padding(vertical = 4.dp),
+                    color = Color(settings.clockColor).copy(alpha = 0.2f),
+                    fontSize = 13.sp
+                )
+                Text(
+                    "Stats",
+                    modifier = Modifier
+                        .clickable { onStatsClick() }
                         .padding(vertical = 4.dp),
                     color = Color(settings.clockColor).copy(alpha = 0.2f),
                     fontSize = 13.sp

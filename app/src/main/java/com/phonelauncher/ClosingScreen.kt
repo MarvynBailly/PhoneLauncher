@@ -43,6 +43,7 @@ fun NightlyClosingScreen(
     dayTasks: List<DayTask>,
     timers: List<TimerEntry>,
     quickActions: List<QuickAction>,
+    usageStats: PhoneUsageStats?,
     closingState: ClosingState,
     isManual: Boolean,
     onComplete: (ClosingState) -> Unit,
@@ -145,6 +146,29 @@ fun NightlyClosingScreen(
                     "${qa.name}: ${qa.count}",
                     color = subtleColor, fontSize = 14.sp
                 )
+            }
+        }
+
+        if (usageStats != null) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Unlocks: ${usageStats.unlockCount}",
+                color = textColor, fontSize = 15.sp
+            )
+            Text(
+                "Screen time: ${formatElapsed(usageStats.totalScreenMs)}",
+                color = textColor, fontSize = 15.sp
+            )
+            val topApps = usageStats.apps.take(3)
+            if (topApps.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text("Top apps:", color = subtleColor, fontSize = 13.sp)
+                topApps.forEach { app ->
+                    Text(
+                        "${app.label}  ${formatElapsed(app.totalMs)}",
+                        color = subtleColor, fontSize = 13.sp
+                    )
+                }
             }
         }
 
