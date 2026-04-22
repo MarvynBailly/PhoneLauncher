@@ -111,6 +111,11 @@ class MainActivity : ComponentActivity() {
         resumeCount++
     }
 
+    override fun onPause() {
+        super.onPause()
+        markLauncherPaused(this)
+    }
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         homePressCount++
@@ -204,13 +209,27 @@ private fun LauncherScreen(activity: MainActivity) {
         val newTasks = generateDayTasks(templates) + carryForwardTasks
         dayState = DayState(date = today, tasks = newTasks, planningDone = false)
         saveDayState(context, dayState)
-        timers.forEach { addToHistory(context, it.name) }
+        val phoneUsageParentId = timers.find {
+            it.name == PHONE_USAGE_TIMER_NAME && it.parentId == null
+        }?.id
+        timers.filter { it.name != PHONE_USAGE_TIMER_NAME && it.parentId != phoneUsageParentId }
+            .forEach { addToHistory(context, it.name) }
         timerHistory = loadTimerHistory(context)
         timers = emptyList()
         saveTimers(context, timers)
         quickActions = emptyList()
         saveQuickActions(context, quickActions, today)
         screen = Screen.PLANNING
+    }
+
+    // Phone-usage sync — back-fill Phone usage timer and auto-pause/resume task timers
+    LaunchedEffect(activity.resumeCount) {
+        if (activity.resumeCount == 0) return@LaunchedEffect
+        val updated = syncPhoneUsage(context, settings, timers)
+        if (updated !== timers) {
+            timers = updated
+            saveTimers(context, timers)
+        }
     }
 
     // Day reset check — keyed on resumeCount so it re-runs each time the activity resumes

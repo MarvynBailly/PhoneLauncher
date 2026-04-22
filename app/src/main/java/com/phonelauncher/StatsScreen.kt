@@ -75,66 +75,66 @@ fun StatsScreen(
 
         Spacer(Modifier.height(32.dp))
 
-        if (!hasPermission) {
-            Text(
-                "Usage access permission is required to show phone stats.",
-                color = textColor, fontSize = 15.sp
-            )
-            Spacer(Modifier.height(16.dp))
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        context.startActivity(
-                            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    },
-                shape = RoundedCornerShape(28.dp),
-                color = textColor.copy(alpha = 0.15f)
-            ) {
-                Text(
-                    "Grant Access",
-                    modifier = Modifier.padding(16.dp),
-                    color = textColor,
-                    fontSize = 16.sp,
-                    textAlign = TextAlign.Center
-                )
-            }
-            return@Column
-        }
-
         val s = stats
-        if (s == null) {
-            Text("Loading...", color = subtleColor, fontSize = 14.sp)
-            return@Column
-        }
-
-        SectionLabel("TODAY", subtleColor)
-        Spacer(Modifier.height(12.dp))
-        StatLine("Unlocks", s.unlockCount.toString(), textColor, subtleColor)
-        Spacer(Modifier.height(8.dp))
-        StatLine("Screen time", formatElapsed(s.totalScreenMs), textColor, subtleColor)
-
-        Spacer(Modifier.height(32.dp))
-        SectionLabel("APPS", subtleColor)
-        Spacer(Modifier.height(12.dp))
-
-        if (s.apps.isEmpty()) {
-            Text("No app usage recorded.", color = subtleColor, fontSize = 14.sp)
-        } else {
-            s.apps.forEach { app ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+        when {
+            !hasPermission -> {
+                Text(
+                    "Usage access permission is required to show phone stats.",
+                    color = textColor, fontSize = 15.sp
+                )
+                Spacer(Modifier.height(16.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            context.startActivity(
+                                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        },
+                    shape = RoundedCornerShape(28.dp),
+                    color = textColor.copy(alpha = 0.15f)
                 ) {
-                    Text(app.label, modifier = Modifier.weight(1f), color = textColor, fontSize = 15.sp)
-                    Text(formatElapsed(app.totalMs), color = subtleColor, fontSize = 14.sp)
+                    Text(
+                        "Grant Access",
+                        modifier = Modifier.padding(16.dp),
+                        color = textColor,
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
-        }
+            s == null -> {
+                Text("Loading...", color = subtleColor, fontSize = 14.sp)
+            }
+            else -> {
+                SectionLabel("TODAY", subtleColor)
+                Spacer(Modifier.height(12.dp))
+                StatLine("Unlocks", s.unlockCount.toString(), textColor, subtleColor)
+                Spacer(Modifier.height(8.dp))
+                StatLine("Screen time", formatElapsed(s.totalScreenMs), textColor, subtleColor)
 
-        Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(32.dp))
+                SectionLabel("APPS", subtleColor)
+                Spacer(Modifier.height(12.dp))
+
+                if (s.apps.isEmpty()) {
+                    Text("No app usage recorded.", color = subtleColor, fontSize = 14.sp)
+                } else {
+                    s.apps.forEach { app ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(app.label, modifier = Modifier.weight(1f), color = textColor, fontSize = 15.sp)
+                            Text(formatElapsed(app.totalMs), color = subtleColor, fontSize = 14.sp)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(32.dp))
+            }
+        }
     }
 }
 

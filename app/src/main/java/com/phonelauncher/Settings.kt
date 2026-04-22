@@ -63,6 +63,7 @@ data class LauncherSettings(
     val dayResetHour: Int = 5,
     val useCelsius: Boolean = false,
     val closingFields: List<ClosingFieldDef> = emptyList(),
+    val trackPhoneUsage: Boolean = false,
 )
 
 data class ThemePreset(
@@ -130,6 +131,7 @@ fun loadSettings(context: Context): LauncherSettings {
                     ClosingFieldDef(f.getString("id"), f.getString("label"), f.getString("type"))
                 }
             } ?: defaults.closingFields,
+            trackPhoneUsage = j.optBoolean("trackPhoneUsage", defaults.trackPhoneUsage),
         )
     } catch (_: Exception) {
         LauncherSettings()
@@ -158,6 +160,7 @@ fun saveSettings(context: Context, settings: LauncherSettings) {
                 })
             }
         })
+        put("trackPhoneUsage", settings.trackPhoneUsage)
     }
     context.getSharedPreferences("launcher_settings", Context.MODE_PRIVATE)
         .edit().putString("settings", json.toString()).apply()
@@ -398,6 +401,42 @@ fun SettingsScreen(
             color = subtleColor,
             fontSize = 12.sp
         )
+
+        Spacer(Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Track phone usage", color = textColor, fontSize = 15.sp)
+                Text(
+                    "Auto-pause task timer and record per-app usage while away",
+                    color = subtleColor,
+                    fontSize = 12.sp
+                )
+            }
+            Switch(
+                checked = settings.trackPhoneUsage,
+                onCheckedChange = { onSettingsChanged(settings.copy(trackPhoneUsage = it)) },
+                colors = SwitchDefaults.colors(checkedTrackColor = textColor.copy(alpha = 0.3f))
+            )
+        }
+
+        if (settings.trackPhoneUsage && !hasUsageStatsPermission(context)) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Usage access permission required. Tap to grant.",
+                color = Color(0xFFFF5252),
+                fontSize = 12.sp,
+                modifier = Modifier.clickable {
+                    context.startActivity(
+                        Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            )
+        }
 
         Spacer(Modifier.height(32.dp))
 
