@@ -64,6 +64,7 @@ data class LauncherSettings(
     val useCelsius: Boolean = false,
     val closingFields: List<ClosingFieldDef> = emptyList(),
     val trackPhoneUsage: Boolean = false,
+    val phoneUsageBreakdown: Boolean = true,
 )
 
 data class ThemePreset(
@@ -132,6 +133,7 @@ fun loadSettings(context: Context): LauncherSettings {
                 }
             } ?: defaults.closingFields,
             trackPhoneUsage = j.optBoolean("trackPhoneUsage", defaults.trackPhoneUsage),
+            phoneUsageBreakdown = j.optBoolean("phoneUsageBreakdown", defaults.phoneUsageBreakdown),
         )
     } catch (_: Exception) {
         LauncherSettings()
@@ -161,6 +163,7 @@ fun saveSettings(context: Context, settings: LauncherSettings) {
             }
         })
         put("trackPhoneUsage", settings.trackPhoneUsage)
+        put("phoneUsageBreakdown", settings.phoneUsageBreakdown)
     }
     context.getSharedPreferences("launcher_settings", Context.MODE_PRIVATE)
         .edit().putString("settings", json.toString()).apply()
@@ -436,6 +439,28 @@ fun SettingsScreen(
                     )
                 }
             )
+        }
+
+        if (settings.trackPhoneUsage) {
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Break down by app", color = textColor, fontSize = 15.sp)
+                    Text(
+                        "Show per-app sub-timers under Phone usage",
+                        color = subtleColor,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = settings.phoneUsageBreakdown,
+                    onCheckedChange = { onSettingsChanged(settings.copy(phoneUsageBreakdown = it)) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = textColor.copy(alpha = 0.3f))
+                )
+            }
         }
 
         Spacer(Modifier.height(32.dp))

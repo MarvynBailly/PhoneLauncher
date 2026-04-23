@@ -53,6 +53,7 @@ fun TimerSection(
     onPause: (TimerEntry) -> Unit,
     onShowDetail: (TimerEntry) -> Unit,
     onRemove: (TimerEntry) -> Unit,
+    onToggleCollapse: (TimerEntry) -> Unit,
 ) {
     if (timers.isEmpty()) return
 
@@ -65,13 +66,22 @@ fun TimerSection(
 
     val roots = timers.filter { it.parentId == null }
     roots.forEach { root ->
+        val children = timers.filter { it.parentId == root.id }
         TimerRow(root, now, textColor, 0,
+            hasChildren = children.isNotEmpty(),
+            isCollapsed = root.collapsed,
             onClick = { if (root.isRunning) onPause(root) else onShowDetail(root) },
-            onRemove = { onRemove(root) })
-        timers.filter { it.parentId == root.id }.forEach { child ->
-            TimerRow(child, now, textColor, 1,
-                onClick = { if (child.isRunning) onPause(child) else onShowDetail(child) },
-                onRemove = { onRemove(child) })
+            onRemove = { onRemove(root) },
+            onToggleCollapse = { onToggleCollapse(root) })
+        if (!root.collapsed) {
+            children.forEach { child ->
+                TimerRow(child, now, textColor, 1,
+                    hasChildren = false,
+                    isCollapsed = false,
+                    onClick = { if (child.isRunning) onPause(child) else onShowDetail(child) },
+                    onRemove = { onRemove(child) },
+                    onToggleCollapse = { })
+            }
         }
     }
     Spacer(Modifier.height(8.dp))
@@ -81,7 +91,10 @@ fun TimerSection(
 @Composable
 private fun TimerRow(
     timer: TimerEntry, now: Long, textColor: Color, indent: Int,
-    onClick: () -> Unit, onRemove: () -> Unit
+    hasChildren: Boolean,
+    isCollapsed: Boolean,
+    onClick: () -> Unit, onRemove: () -> Unit,
+    onToggleCollapse: () -> Unit,
 ) {
     val elapsed = timer.elapsed(now)
     Row(
@@ -91,6 +104,15 @@ private fun TimerRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (indent > 0) Text("  ", color = textColor.copy(alpha = 0.3f), fontSize = 14.sp)
+        if (hasChildren) {
+            Text(
+                if (isCollapsed) "+" else "-",
+                modifier = Modifier.clickable { onToggleCollapse() }.padding(horizontal = 4.dp),
+                color = textColor.copy(alpha = 0.6f),
+                fontSize = 14.sp
+            )
+            Spacer(Modifier.width(4.dp))
+        }
         Text(
             if (timer.isRunning) ">" else "||",
             color = if (timer.isRunning) Color(0xFF4CAF50) else textColor.copy(alpha = 0.5f),

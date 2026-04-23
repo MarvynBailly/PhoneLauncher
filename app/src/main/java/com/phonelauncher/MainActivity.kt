@@ -383,6 +383,11 @@ private fun LauncherScreen(activity: MainActivity) {
         saveTimers(context, timers)
     }
 
+    fun toggleCollapseTimer(timer: TimerEntry) {
+        timers = timers.map { if (it.id == timer.id) it.copy(collapsed = !it.collapsed) else it }
+        saveTimers(context, timers)
+    }
+
     fun removeTimer(timer: TimerEntry) {
         if (timer.dndEnabled && timer.isRunning) {
             if (timers.none { it.id != timer.id && it.isRunning && it.dndEnabled })
@@ -479,6 +484,7 @@ private fun LauncherScreen(activity: MainActivity) {
                 onAddTask = { editingTask = null; screenBeforeEdit = Screen.HOME; screen = Screen.TASK_EDIT },
                 onPauseTimer = ::pauseTimer, onShowTimerDetail = { timerDetailFor = it },
                 onRemoveTimer = ::removeTimer, onAddTimer = { showNewTimerDialog = true },
+                onToggleCollapseTimer = ::toggleCollapseTimer,
                 onIncrementAction = ::incrementAction, onDecrementAction = ::decrementAction,
                 onRemoveAction = { quickActions = quickActions.filter { a -> a.id != it.id }; saveQuickActions(context, quickActions, effectiveDate) },
                 onAddCounter = { showNewCounterDialog = true },
@@ -613,6 +619,7 @@ private fun HomeScreen(
     onShowTimerDetail: (TimerEntry) -> Unit,
     onRemoveTimer: (TimerEntry) -> Unit,
     onAddTimer: () -> Unit,
+    onToggleCollapseTimer: (TimerEntry) -> Unit,
     onIncrementAction: (QuickAction) -> Unit,
     onDecrementAction: (QuickAction) -> Unit,
     onRemoveAction: (QuickAction) -> Unit,
@@ -642,15 +649,15 @@ private fun HomeScreen(
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(8.dp))
         Clock(settings)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         Temperature(settings, onClick = onTemperatureClick)
         if (homeUsageStats != null) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             HomeStatsLine(homeUsageStats, settings)
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
 
         // Scrollable middle content
         Column(
@@ -660,7 +667,7 @@ private fun HomeScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             // Timers
-            TimerSection(timers, settings, onPauseTimer, onShowTimerDetail, onRemoveTimer)
+            TimerSection(timers, settings, onPauseTimer, onShowTimerDetail, onRemoveTimer, onToggleCollapseTimer)
 
             // Quick Actions
             if (quickActions.isNotEmpty()) {

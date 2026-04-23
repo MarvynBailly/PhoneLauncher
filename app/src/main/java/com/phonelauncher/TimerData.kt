@@ -17,6 +17,7 @@ data class TimerEntry(
     val startedAt: Long = System.currentTimeMillis(),
     val isRunning: Boolean = true,
     val dndEnabled: Boolean = false,
+    val collapsed: Boolean = false,
 )
 
 data class QuickAction(
@@ -149,6 +150,7 @@ private fun timerToJson(t: TimerEntry) = JSONObject().apply {
     put("segs", JSONArray().apply { t.segments.forEach { put(segToJson(it)) } })
     put("startedAt", t.startedAt)
     put("running", t.isRunning); put("dnd", t.dndEnabled)
+    put("collapsed", t.collapsed)
 }
 
 private fun timerFromJson(j: JSONObject) = TimerEntry(
@@ -161,4 +163,5 @@ private fun timerFromJson(j: JSONObject) = TimerEntry(
     startedAt = j.optLong("startedAt", System.currentTimeMillis()),
     isRunning = j.optBoolean("running", false),
     dndEnabled = j.optBoolean("dnd", false),
+    collapsed = j.optBoolean("collapsed", false),
 )

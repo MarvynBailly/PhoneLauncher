@@ -66,21 +66,23 @@ fun syncPhoneUsage(
     )
     if (parentIdx >= 0) updated[parentIdx] = newParent else updated.add(newParent)
 
-    segments.groupBy { it.pkg }.forEach { (pkg, segs) ->
-        val subName = labelFor(pkg)
-        val subIdx = updated.indexOfFirst { it.parentId == newParent.id && it.name == subName }
-        val newSegs = segs.map { TimeSegment(it.startMs, it.endMs) }
-        if (subIdx >= 0) {
-            val cur = updated[subIdx]
-            updated[subIdx] = cur.copy(segments = cur.segments + newSegs, isRunning = false, startedAt = now)
-        } else {
-            updated.add(TimerEntry(
-                name = subName,
-                parentId = newParent.id,
-                isRunning = false,
-                startedAt = now,
-                segments = newSegs,
-            ))
+    if (settings.phoneUsageBreakdown) {
+        segments.groupBy { it.pkg }.forEach { (pkg, segs) ->
+            val subName = labelFor(pkg)
+            val subIdx = updated.indexOfFirst { it.parentId == newParent.id && it.name == subName }
+            val newSegs = segs.map { TimeSegment(it.startMs, it.endMs) }
+            if (subIdx >= 0) {
+                val cur = updated[subIdx]
+                updated[subIdx] = cur.copy(segments = cur.segments + newSegs, isRunning = false, startedAt = now)
+            } else {
+                updated.add(TimerEntry(
+                    name = subName,
+                    parentId = newParent.id,
+                    isRunning = false,
+                    startedAt = now,
+                    segments = newSegs,
+                ))
+            }
         }
     }
 
