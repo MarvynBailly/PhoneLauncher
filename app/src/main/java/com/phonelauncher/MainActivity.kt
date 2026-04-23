@@ -289,6 +289,23 @@ private fun LauncherScreen(activity: MainActivity) {
         }
     }
 
+    fun openWeather() {
+        val weatherApp = apps.firstOrNull {
+            it.label.contains("weather", ignoreCase = true) ||
+                it.packageName.contains("weather", ignoreCase = true)
+        }
+        if (weatherApp != null) {
+            launchApp(weatherApp)
+            return
+        }
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Exception) { }
+    }
+
     fun completeTask(task: DayTask) {
         val wasCompleted = task.isCompleted
         val updated = dayState.tasks.map {
@@ -451,7 +468,11 @@ private fun LauncherScreen(activity: MainActivity) {
                 settings = settings, pinnedApps = pinnedApps,
                 dayTasks = dayState.tasks, rewardSessions = rewardSessions,
                 timers = timers, quickActions = quickActions,
+                homeUsageStats = remember(activity.resumeCount) {
+                    if (hasUsageStatsPermission(context)) loadUsageStats(context, settings.dayResetHour) else null
+                },
                 onLaunch = ::launchApp, onUnpin = ::togglePin,
+                onTemperatureClick = ::openWeather,
                 onCompleteTask = ::completeTask, onRemoveTask = ::removeTask,
                 onEditTask = { editingTask = it; screenBeforeEdit = Screen.HOME; screen = Screen.TASK_EDIT },
                 onQuickAddTask = ::quickAddTask,
@@ -579,8 +600,10 @@ private fun HomeScreen(
     rewardSessions: List<RewardSession>,
     timers: List<TimerEntry>,
     quickActions: List<QuickAction>,
+    homeUsageStats: PhoneUsageStats?,
     onLaunch: (AppInfo) -> Unit,
     onUnpin: (AppInfo) -> Unit,
+    onTemperatureClick: () -> Unit,
     onCompleteTask: (DayTask) -> Unit,
     onRemoveTask: (DayTask) -> Unit,
     onEditTask: (DayTask) -> Unit,
@@ -622,7 +645,11 @@ private fun HomeScreen(
         Spacer(Modifier.height(48.dp))
         Clock(settings)
         Spacer(Modifier.height(4.dp))
-        Temperature(settings)
+        Temperature(settings, onClick = onTemperatureClick)
+        if (homeUsageStats != null) {
+            Spacer(Modifier.height(8.dp))
+            HomeStatsLine(homeUsageStats, settings)
+        }
         Spacer(Modifier.height(24.dp))
 
         // Scrollable middle content
@@ -870,7 +897,7 @@ private fun Clock(settings: LauncherSettings) {
 }
 
 @Composable
-private fun Temperature(settings: LauncherSettings) {
+private fun Temperature(settings: LauncherSettings, onClick: () -> Unit) {
     val context = LocalContext.current
     var temp by remember { mutableStateOf<String?>(null) }
     var permissionGranted by remember {
@@ -891,8 +918,34 @@ private fun Temperature(settings: LauncherSettings) {
     }
 
     if (temp != null) {
-        Text(temp!!, fontSize = settings.tempSize.sp, fontWeight = FontWeight.Light, color = Color(settings.tempColor))
+        Text(
+            temp!!,
+            modifier = Modifier.clickable { onClick() }.padding(8.dp),
+            fontSize = settings.tempSize.sp,
+            fontWeight = FontWeight.Light,
+            color = Color(settings.tempColor)
+        )
     }
+}
+
+@Composable
+private fun HomeStatsLine(stats: PhoneUsageStats, settings: LauncherSettings) {
+    val color = Color(settings.tempColor).copy(alpha = 0.7f)
+    val topApp = stats.apps.firstOrNull()?.label
+    val duration = formatDurationShort(stats.totalScreenMs)
+    val parts = buildList {
+        add("${stats.unlockCount} unlocks")
+        add(duration)
+        if (topApp != null) add(topApp)
+    }
+    Text(parts.joinToString("  \u00B7  "), fontSize = 12.sp, color = color)
+}
+
+private fun formatDurationShort(ms: Long): String {
+    val total = maxOf(0, ms / 1000)
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    return if (h > 0) "${h}h ${m}m" else "${m}m"
 }
 
 @SuppressLint("MissingPermission")
