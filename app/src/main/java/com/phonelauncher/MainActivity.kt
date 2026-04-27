@@ -252,7 +252,7 @@ private fun LauncherScreen(activity: MainActivity) {
         if (!dayState.planningDone) screen = Screen.PLANNING
     }
 
-    val apps = remember {
+    val apps = remember(activity.resumeCount) {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         pm.queryIntentActivities(intent, 0)
@@ -261,7 +261,7 @@ private fun LauncherScreen(activity: MainActivity) {
             .sortedBy { it.label.lowercase() }
     }
 
-    val pinnedApps = remember(settings.pinnedApps) {
+    val pinnedApps = remember(settings.pinnedApps, apps) {
         settings.pinnedApps.mapNotNull { pkg -> apps.find { it.packageName == pkg } }
     }
 
