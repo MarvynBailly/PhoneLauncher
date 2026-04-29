@@ -41,29 +41,39 @@ class TimerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Always satisfy the startForegroundService contract by calling
+        // startForeground before any branch can stopSelf. Otherwise the system
+        // throws ForegroundServiceDidNotStartInTime / RemoteServiceException.
+        val running = loadTimers(this).filter { it.isRunning }
+        val notif = if (running.isNotEmpty()) buildNotification(running)
+        else placeholderNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIF_ID, notif)
+        }
+
         when (intent?.action) {
             ACTION_PAUSE -> {
-                val id = intent.getStringExtra("timer_id") ?: return START_NOT_STICKY
-                pauseById(id)
-                // Notify activity to sync
+                val id = intent.getStringExtra("timer_id")
+                if (id != null) pauseById(id)
                 sendBroadcast(Intent(ACTION_SYNC).setPackage(packageName))
-                // Check if any still running
                 val remaining = loadTimers(this).filter { it.isRunning }
                 if (remaining.isEmpty()) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
+                    return START_NOT_STICKY
                 } else {
                     NotificationManagerCompat.from(this).notify(NOTIF_ID, buildNotification(remaining))
+                    handler.removeCallbacks(ticker)
+                    handler.postDelayed(ticker, 1000)
                 }
             }
             else -> {
-                val running = loadTimers(this).filter { it.isRunning }
-                if (running.isEmpty()) { stopSelf(); return START_NOT_STICKY }
-                val notif = buildNotification(running)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-                } else {
-                    startForeground(NOTIF_ID, notif)
+                if (running.isEmpty()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                    return START_NOT_STICKY
                 }
                 handler.removeCallbacks(ticker)
                 handler.postDelayed(ticker, 1000)
@@ -71,6 +81,14 @@ class TimerService : Service() {
         }
         return START_STICKY
     }
+
+    private fun placeholderNotification(): android.app.Notification =
+        NotificationCompat.Builder(this, "timers_v2")
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("Timers")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
 
     private fun pauseById(id: String) {
         val timers = loadTimers(this)

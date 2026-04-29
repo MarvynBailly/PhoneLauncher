@@ -400,8 +400,17 @@ private fun LauncherScreen(activity: MainActivity) {
     }
 
     fun startTimer(name: String, taskId: String?, parentId: String?, dnd: Boolean) {
-        // Resume existing paused timer with same name
-        val existing = timers.find { it.name == name && !it.isRunning }
+        // Resume existing paused timer with same name, but never resume the
+        // auto-managed Phone usage parent or its sub-timers — those are
+        // continuously forced back to paused by syncPhoneUsage.
+        val phoneUsageParentId = timers.find {
+            it.name == PHONE_USAGE_TIMER_NAME && it.parentId == null
+        }?.id
+        val existing = timers.find {
+            it.name == name && !it.isRunning &&
+                it.name != PHONE_USAGE_TIMER_NAME &&
+                (phoneUsageParentId == null || it.parentId != phoneUsageParentId)
+        }
         if (existing != null) {
             timers = timers.map { if (it.id == existing.id) it.resume() else it }
         } else {

@@ -38,21 +38,39 @@ fun syncPhoneUsage(
 ): List<TimerEntry> {
     val lastPause = readLastPause(context)
     clearLastPause(context)
-
-    if (!settings.trackPhoneUsage) return timers
-    if (!hasUsageStatsPermission(context)) return timers
     if (lastPause <= 0 || now - lastPause < 2_000) return timers
+
+    // Auto-pause / auto-resume any running task timer so it doesn't accumulate
+    // time spent away from the launcher. Runs even when phone-usage tracking is
+    // off or usage-stats permission is missing — those only gate the per-app
+    // breakdown, not the basic away-time exclusion.
+    val phoneUsageParentId = timers.find {
+        it.name == PHONE_USAGE_TIMER_NAME && it.parentId == null
+    }?.id
+    val truncated = timers.map { t ->
+        val isPhoneUsage = t.name == PHONE_USAGE_TIMER_NAME ||
+            (phoneUsageParentId != null && t.parentId == phoneUsageParentId)
+        if (t.isRunning && !isPhoneUsage && t.startedAt < lastPause) {
+            t.copy(
+                segments = t.segments + TimeSegment(t.startedAt, lastPause),
+                startedAt = now,
+            )
+        } else t
+    }
+
+    if (!settings.trackPhoneUsage) return truncated
+    if (!hasUsageStatsPermission(context)) return truncated
 
     val self = context.packageName
     val segments = collectForegroundSegments(context, lastPause, now).filter { it.pkg != self }
-    if (segments.isEmpty()) return timers
+    if (segments.isEmpty()) return truncated
 
     val pm = context.packageManager
     fun labelFor(pkg: String) = try {
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
     } catch (_: Exception) { pkg }
 
-    val updated = timers.toMutableList()
+    val updated = truncated.toMutableList()
 
     val parentIdx = updated.indexOfFirst { it.name == PHONE_USAGE_TIMER_NAME && it.parentId == null }
     val parent = if (parentIdx >= 0) updated[parentIdx]
@@ -83,20 +101,6 @@ fun syncPhoneUsage(
                     segments = newSegs,
                 ))
             }
-        }
-    }
-
-    val phoneUsageIds = updated
-        .filter { it.name == PHONE_USAGE_TIMER_NAME || it.parentId == newParent.id }
-        .map { it.id }
-        .toSet()
-    for (i in updated.indices) {
-        val t = updated[i]
-        if (t.isRunning && t.id !in phoneUsageIds && t.startedAt < lastPause) {
-            updated[i] = t.copy(
-                segments = t.segments + TimeSegment(t.startedAt, lastPause),
-                startedAt = now,
-            )
         }
     }
 
