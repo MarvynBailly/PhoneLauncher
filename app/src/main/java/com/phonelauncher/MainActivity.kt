@@ -86,7 +86,7 @@ import java.util.UUID
 
 data class AppInfo(val label: String, val packageName: String)
 
-private enum class Screen { HOME, SEARCH, SETTINGS, PLANNING, TASK_EDIT, CLOSING, STATS }
+private enum class Screen { HOME, SEARCH, SETTINGS, PLANNING, TASK_EDIT, CLOSING, STATS, RECURRING_TASKS }
 
 class MainActivity : ComponentActivity() {
     var homePressCount by mutableStateOf(0)
@@ -131,6 +131,7 @@ private fun LauncherScreen(activity: MainActivity) {
     var templates by remember { mutableStateOf(loadTaskTemplates(context)) }
     var rewardSessions by remember { mutableStateOf(loadRewardSessions(context)) }
     var editingTask by remember { mutableStateOf<DayTask?>(null) }
+    var editingTemplate by remember { mutableStateOf<TaskTemplate?>(null) }
     var screenBeforeEdit by remember { mutableStateOf(Screen.HOME) }
     var blockMessage by remember { mutableStateOf<String?>(null) }
     var closingState by remember { mutableStateOf(loadClosingState(context)) }
@@ -347,6 +348,32 @@ private fun LauncherScreen(activity: MainActivity) {
         screen = screenBeforeEdit
     }
 
+    fun saveTemplate(task: DayTask, recurrence: Recurrence) {
+        val tmplId = task.templateId ?: UUID.randomUUID().toString()
+        val effectiveRecurrence = if (recurrence == Recurrence.NONE) Recurrence.DAILY else recurrence
+        val tmpl = TaskTemplate(
+            id = tmplId,
+            title = task.title,
+            deadlineHour = task.deadlineHour,
+            deadlineMinute = task.deadlineMinute,
+            reminderMinutes = task.reminderMinutes,
+            rewardAppPackage = task.rewardAppPackage,
+            rewardMinutes = task.rewardMinutes,
+            recurrence = effectiveRecurrence,
+        )
+        val idx = templates.indexOfFirst { it.id == tmplId }
+        templates = if (idx >= 0) templates.toMutableList().apply { set(idx, tmpl) }
+        else templates + tmpl
+        saveTaskTemplates(context, templates)
+        editingTemplate = null
+        screen = screenBeforeEdit
+    }
+
+    fun deleteTemplate(template: TaskTemplate) {
+        templates = templates.filter { it.id != template.id }
+        saveTaskTemplates(context, templates)
+    }
+
     fun quickAddTask(title: String) {
         val task = DayTask(title = title)
         dayState = dayState.copy(tasks = dayState.tasks + task)
@@ -474,8 +501,32 @@ private fun LauncherScreen(activity: MainActivity) {
             )
 
             Screen.TASK_EDIT -> TaskEditScreen(
-                settings = settings, allApps = apps, existingTask = editingTask,
-                onSave = ::saveTask, onDismiss = { screen = screenBeforeEdit }
+                settings = settings, allApps = apps,
+                existingTask = if (editingTemplate == null) editingTask else null,
+                existingTemplate = editingTemplate,
+                onSave = { task, recurrence ->
+                    if (editingTemplate != null) saveTemplate(task, recurrence)
+                    else saveTask(task, recurrence)
+                },
+                onDismiss = { editingTemplate = null; screen = screenBeforeEdit }
+            )
+
+            Screen.RECURRING_TASKS -> RecurringTasksScreen(
+                settings = settings,
+                templates = templates,
+                allApps = apps,
+                onEdit = { tmpl ->
+                    editingTemplate = tmpl
+                    screenBeforeEdit = Screen.RECURRING_TASKS
+                    screen = Screen.TASK_EDIT
+                },
+                onDelete = ::deleteTemplate,
+                onAdd = {
+                    editingTemplate = TaskTemplate()
+                    screenBeforeEdit = Screen.RECURRING_TASKS
+                    screen = Screen.TASK_EDIT
+                },
+                onDismiss = { screen = Screen.HOME }
             )
 
             Screen.HOME -> HomeScreen(
@@ -500,6 +551,7 @@ private fun LauncherScreen(activity: MainActivity) {
                 onSearchClick = { screen = Screen.SEARCH },
                 onStartDay = { screen = Screen.PLANNING },
                 onStatsClick = { screen = Screen.STATS },
+                onRecurringClick = { screen = Screen.RECURRING_TASKS },
                 onCloseDay = {
                     val cs = loadClosingState(context)
                     closingState = if (cs.date == dayState.date) cs else ClosingState(date = dayState.date)
@@ -636,6 +688,7 @@ private fun HomeScreen(
     onSearchClick: () -> Unit,
     onStartDay: () -> Unit,
     onStatsClick: () -> Unit,
+    onRecurringClick: () -> Unit,
     onCloseDay: () -> Unit,
 
 ) {
@@ -712,6 +765,14 @@ private fun HomeScreen(
                     "Stats",
                     modifier = Modifier
                         .clickable { onStatsClick() }
+                        .padding(vertical = 4.dp),
+                    color = Color(settings.clockColor).copy(alpha = 0.2f),
+                    fontSize = 13.sp
+                )
+                Text(
+                    "Recurring",
+                    modifier = Modifier
+                        .clickable { onRecurringClick() }
                         .padding(vertical = 4.dp),
                     color = Color(settings.clockColor).copy(alpha = 0.2f),
                     fontSize = 13.sp

@@ -153,10 +153,129 @@ fun DailyPlanningScreen(
 }
 
 @Composable
+fun RecurringTasksScreen(
+    settings: LauncherSettings,
+    templates: List<TaskTemplate>,
+    allApps: List<AppInfo>,
+    onEdit: (TaskTemplate) -> Unit,
+    onDelete: (TaskTemplate) -> Unit,
+    onAdd: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BackHandler { onDismiss() }
+    val textColor = Color(settings.clockColor)
+    val subtleColor = textColor.copy(alpha = 0.5f)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(settings.backgroundColor))
+            .systemBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "<",
+                modifier = Modifier
+                    .clickable { onDismiss() }
+                    .padding(8.dp),
+                fontSize = 24.sp,
+                color = textColor
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Recurring Tasks",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = textColor
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Tasks that repeat on a schedule. Added to your day on planning.",
+            color = subtleColor,
+            fontSize = 12.sp
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        if (templates.isEmpty()) {
+            Text(
+                "No recurring tasks yet.",
+                color = subtleColor,
+                fontSize = 14.sp
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+
+        templates.forEach { tmpl ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onEdit(tmpl) }
+                    .padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        tmpl.title.ifBlank { "(untitled)" },
+                        color = textColor,
+                        fontSize = 16.sp
+                    )
+                    val parts = buildList {
+                        add(when (tmpl.recurrence) {
+                            Recurrence.DAILY -> "Daily"
+                            Recurrence.WEEKDAYS -> "Weekdays"
+                            Recurrence.WEEKLY -> "Weekly (Mon)"
+                            Recurrence.NONE -> "Once"
+                        })
+                        if (tmpl.deadlineHour != null) {
+                            add(formatTime(tmpl.deadlineHour, tmpl.deadlineMinute ?: 0))
+                        }
+                        if (tmpl.rewardAppPackage != null) {
+                            val app = allApps.find { it.packageName == tmpl.rewardAppPackage }
+                            add("${tmpl.rewardMinutes}m " + (app?.label ?: "app"))
+                        }
+                    }
+                    Text(
+                        parts.joinToString("  \u00B7  "),
+                        color = subtleColor,
+                        fontSize = 12.sp
+                    )
+                }
+                Text(
+                    "x",
+                    modifier = Modifier
+                        .clickable { onDelete(tmpl) }
+                        .padding(8.dp),
+                    color = Color(0xFFFF5252),
+                    fontSize = 16.sp
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "+ Add recurring task",
+            modifier = Modifier
+                .clickable { onAdd() }
+                .padding(vertical = 8.dp),
+            color = textColor.copy(alpha = 0.7f),
+            fontSize = 16.sp
+        )
+
+        Spacer(Modifier.height(48.dp))
+    }
+}
+
+@Composable
 fun TaskEditScreen(
     settings: LauncherSettings,
     allApps: List<AppInfo>,
     existingTask: DayTask?,
+    existingTemplate: TaskTemplate? = null,
     onSave: (DayTask, Recurrence) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -165,15 +284,31 @@ fun TaskEditScreen(
     val context = LocalContext.current
     val textColor = Color(settings.clockColor)
     val subtleColor = textColor.copy(alpha = 0.5f)
+    val isTemplate = existingTemplate != null
+    val isExistingTemplate = isTemplate && existingTemplate?.title?.isNotBlank() == true
 
-    var title by remember { mutableStateOf(existingTask?.title ?: "") }
-    var hasDeadline by remember { mutableStateOf(existingTask?.deadlineHour != null) }
-    var deadlineHour by remember { mutableStateOf(existingTask?.deadlineHour ?: 17) }
-    var deadlineMinute by remember { mutableStateOf(existingTask?.deadlineMinute ?: 0) }
-    var reminderMinutes by remember { mutableStateOf(existingTask?.reminderMinutes) }
-    var recurrence by remember { mutableStateOf(Recurrence.NONE) }
-    var rewardApp by remember { mutableStateOf(existingTask?.rewardAppPackage) }
-    var rewardMinutes by remember { mutableStateOf(existingTask?.rewardMinutes ?: 15) }
+    var title by remember { mutableStateOf(existingTemplate?.title ?: existingTask?.title ?: "") }
+    var hasDeadline by remember {
+        mutableStateOf((existingTemplate?.deadlineHour ?: existingTask?.deadlineHour) != null)
+    }
+    var deadlineHour by remember {
+        mutableStateOf(existingTemplate?.deadlineHour ?: existingTask?.deadlineHour ?: 17)
+    }
+    var deadlineMinute by remember {
+        mutableStateOf(existingTemplate?.deadlineMinute ?: existingTask?.deadlineMinute ?: 0)
+    }
+    var reminderMinutes by remember {
+        mutableStateOf(existingTemplate?.reminderMinutes ?: existingTask?.reminderMinutes)
+    }
+    var recurrence by remember {
+        mutableStateOf(existingTemplate?.recurrence ?: Recurrence.NONE)
+    }
+    var rewardApp by remember {
+        mutableStateOf(existingTemplate?.rewardAppPackage ?: existingTask?.rewardAppPackage)
+    }
+    var rewardMinutes by remember {
+        mutableStateOf(existingTemplate?.rewardMinutes ?: existingTask?.rewardMinutes ?: 15)
+    }
     var showTimePicker by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
 
@@ -239,7 +374,12 @@ fun TaskEditScreen(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                if (existingTask != null) "Edit Task" else "New Task",
+                when {
+                    isExistingTemplate -> "Edit Recurring"
+                    isTemplate -> "New Recurring"
+                    existingTask != null -> "Edit Task"
+                    else -> "New Task"
+                },
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = textColor
@@ -319,8 +459,13 @@ fun TaskEditScreen(
         // Recurrence
         Text("REPEAT", fontSize = 11.sp, color = subtleColor, letterSpacing = 2.sp)
         Spacer(Modifier.height(8.dp))
+        val recurrenceOptions = if (isTemplate) {
+            listOf(Recurrence.DAILY, Recurrence.WEEKDAYS, Recurrence.WEEKLY)
+        } else {
+            Recurrence.values().toList()
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Recurrence.values().forEach { r ->
+            recurrenceOptions.forEach { r ->
                 val sel = recurrence == r
                 val label = when (r) {
                     Recurrence.NONE -> "Once"
@@ -400,7 +545,7 @@ fun TaskEditScreen(
                     if (title.isNotBlank()) {
                         val task = DayTask(
                             id = existingTask?.id ?: UUID.randomUUID().toString(),
-                            templateId = existingTask?.templateId,
+                            templateId = existingTemplate?.id ?: existingTask?.templateId,
                             title = title,
                             deadlineHour = if (hasDeadline) deadlineHour else null,
                             deadlineMinute = if (hasDeadline) deadlineMinute else null,
