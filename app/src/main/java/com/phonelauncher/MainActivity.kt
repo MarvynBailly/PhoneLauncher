@@ -26,6 +26,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,9 +62,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Velocity
@@ -287,6 +290,32 @@ private fun LauncherScreen(activity: MainActivity) {
         }
         context.packageManager.getLaunchIntentForPackage(app.packageName)?.let {
             context.startActivity(it)
+        }
+    }
+
+    fun executeSwipeAction(action: SwipeAction) {
+        when (action.type) {
+            SwipeActionType.NONE -> {}
+            SwipeActionType.APP -> {
+                val pkg = action.packageName ?: return
+                val app = apps.find { it.packageName == pkg }
+                if (app != null) {
+                    launchApp(app)
+                } else {
+                    blockMessage = "${action.label.ifBlank { pkg }} is no longer installed."
+                }
+            }
+            SwipeActionType.URL -> {
+                val url = action.url ?: return
+                try {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (_: Exception) {
+                    blockMessage = "Couldn't open ${action.label.ifBlank { url }}"
+                }
+            }
         }
     }
 
@@ -552,6 +581,8 @@ private fun LauncherScreen(activity: MainActivity) {
                 onStartDay = { screen = Screen.PLANNING },
                 onStatsClick = { screen = Screen.STATS },
                 onRecurringClick = { screen = Screen.RECURRING_TASKS },
+                onSwipeLeft = { executeSwipeAction(settings.swipeLeftAction) },
+                onSwipeRight = { executeSwipeAction(settings.swipeRightAction) },
                 onCloseDay = {
                     val cs = loadClosingState(context)
                     closingState = if (cs.date == dayState.date) cs else ClosingState(date = dayState.date)
@@ -689,6 +720,8 @@ private fun HomeScreen(
     onStartDay: () -> Unit,
     onStatsClick: () -> Unit,
     onRecurringClick: () -> Unit,
+    onSwipeLeft: () -> Unit,
+    onSwipeRight: () -> Unit,
     onCloseDay: () -> Unit,
 
 ) {
@@ -702,11 +735,27 @@ private fun HomeScreen(
             }
         }
     }
+    val horizontalThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .nestedScroll(nestedScrollConnection)
+            .pointerInput(onSwipeLeft, onSwipeRight) {
+                var totalDrag = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { totalDrag = 0f },
+                    onDragCancel = { totalDrag = 0f },
+                    onDragEnd = {
+                        when {
+                            totalDrag < -horizontalThresholdPx -> onSwipeLeft()
+                            totalDrag > horizontalThresholdPx -> onSwipeRight()
+                        }
+                    },
+                ) { _, dragAmount ->
+                    totalDrag += dragAmount
+                }
+            }
             .systemBarsPadding()
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally

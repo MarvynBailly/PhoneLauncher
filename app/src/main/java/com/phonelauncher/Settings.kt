@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,12 +23,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -48,6 +56,15 @@ import androidx.compose.ui.unit.sp
 import org.json.JSONArray
 import org.json.JSONObject
 
+enum class SwipeActionType { NONE, APP, URL }
+
+data class SwipeAction(
+    val type: SwipeActionType = SwipeActionType.NONE,
+    val packageName: String? = null,
+    val url: String? = null,
+    val label: String = "",
+)
+
 data class LauncherSettings(
     val pinnedApps: List<String> = emptyList(),
     val clockSize: Int = 64,
@@ -65,6 +82,8 @@ data class LauncherSettings(
     val closingFields: List<ClosingFieldDef> = emptyList(),
     val trackPhoneUsage: Boolean = false,
     val phoneUsageBreakdown: Boolean = true,
+    val swipeLeftAction: SwipeAction = SwipeAction(),
+    val swipeRightAction: SwipeAction = SwipeAction(),
 )
 
 data class ThemePreset(
@@ -134,10 +153,32 @@ fun loadSettings(context: Context): LauncherSettings {
             } ?: defaults.closingFields,
             trackPhoneUsage = j.optBoolean("trackPhoneUsage", defaults.trackPhoneUsage),
             phoneUsageBreakdown = j.optBoolean("phoneUsageBreakdown", defaults.phoneUsageBreakdown),
+            swipeLeftAction = j.optJSONObject("swipeLeftAction")?.let(::swipeActionFromJson)
+                ?: defaults.swipeLeftAction,
+            swipeRightAction = j.optJSONObject("swipeRightAction")?.let(::swipeActionFromJson)
+                ?: defaults.swipeRightAction,
         )
     } catch (_: Exception) {
         LauncherSettings()
     }
+}
+
+private fun swipeActionFromJson(j: JSONObject): SwipeAction {
+    val type = try { SwipeActionType.valueOf(j.optString("type", "NONE")) }
+    catch (_: Exception) { SwipeActionType.NONE }
+    return SwipeAction(
+        type = type,
+        packageName = j.optString("packageName", "").ifEmpty { null },
+        url = j.optString("url", "").ifEmpty { null },
+        label = j.optString("label", ""),
+    )
+}
+
+private fun swipeActionToJson(a: SwipeAction) = JSONObject().apply {
+    put("type", a.type.name)
+    put("packageName", a.packageName ?: "")
+    put("url", a.url ?: "")
+    put("label", a.label)
 }
 
 fun saveSettings(context: Context, settings: LauncherSettings) {
@@ -164,6 +205,8 @@ fun saveSettings(context: Context, settings: LauncherSettings) {
         })
         put("trackPhoneUsage", settings.trackPhoneUsage)
         put("phoneUsageBreakdown", settings.phoneUsageBreakdown)
+        put("swipeLeftAction", swipeActionToJson(settings.swipeLeftAction))
+        put("swipeRightAction", swipeActionToJson(settings.swipeRightAction))
     }
     context.getSharedPreferences("launcher_settings", Context.MODE_PRIVATE)
         .edit().putString("settings", json.toString()).apply()
@@ -465,6 +508,58 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(32.dp))
 
+        // Swipe Shortcuts
+        SectionLabel("SWIPE SHORTCUTS", subtleColor)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Assign an app or web bookmark to home-screen swipes",
+            color = subtleColor,
+            fontSize = 12.sp
+        )
+        Spacer(Modifier.height(12.dp))
+
+        var editingDirection by remember { mutableStateOf<String?>(null) }
+
+        SwipeActionRow(
+            label = "Swipe left",
+            action = settings.swipeLeftAction,
+            allApps = allApps,
+            textColor = textColor,
+            subtleColor = subtleColor,
+            onEdit = { editingDirection = "left" },
+            onClear = { onSettingsChanged(settings.copy(swipeLeftAction = SwipeAction())) },
+        )
+        Spacer(Modifier.height(8.dp))
+        SwipeActionRow(
+            label = "Swipe right",
+            action = settings.swipeRightAction,
+            allApps = allApps,
+            textColor = textColor,
+            subtleColor = subtleColor,
+            onEdit = { editingDirection = "right" },
+            onClear = { onSettingsChanged(settings.copy(swipeRightAction = SwipeAction())) },
+        )
+
+        editingDirection?.let { dir ->
+            val current = if (dir == "left") settings.swipeLeftAction else settings.swipeRightAction
+            SwipeActionPickerDialog(
+                title = if (dir == "left") "Swipe left" else "Swipe right",
+                current = current,
+                allApps = allApps,
+                settings = settings,
+                onSave = { newAction ->
+                    onSettingsChanged(
+                        if (dir == "left") settings.copy(swipeLeftAction = newAction)
+                        else settings.copy(swipeRightAction = newAction)
+                    )
+                    editingDirection = null
+                },
+                onDismiss = { editingDirection = null },
+            )
+        }
+
+        Spacer(Modifier.height(32.dp))
+
         // Restricted Apps
         SectionLabel("RESTRICTED APPS", subtleColor)
         Spacer(Modifier.height(4.dp))
@@ -681,4 +776,237 @@ private fun ColorPicker(
         }
     }
     Spacer(Modifier.height(16.dp))
+}
+
+private fun describeSwipeAction(action: SwipeAction, allApps: List<AppInfo>): String =
+    when (action.type) {
+        SwipeActionType.NONE -> "None"
+        SwipeActionType.APP -> {
+            val app = allApps.find { it.packageName == action.packageName }
+            app?.label ?: action.label.ifBlank { action.packageName ?: "Unknown app" }
+        }
+        SwipeActionType.URL -> action.label.ifBlank { action.url ?: "URL" }
+    }
+
+@Composable
+private fun SwipeActionRow(
+    label: String,
+    action: SwipeAction,
+    allApps: List<AppInfo>,
+    textColor: Color,
+    subtleColor: Color,
+    onEdit: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onEdit() }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, color = textColor, fontSize = 15.sp)
+            Text(
+                describeSwipeAction(action, allApps),
+                color = subtleColor,
+                fontSize = 12.sp,
+            )
+        }
+        if (action.type != SwipeActionType.NONE) {
+            Text(
+                "x",
+                modifier = Modifier
+                    .clickable { onClear() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                color = Color(0xFFFF5252),
+                fontSize = 16.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SwipeActionPickerDialog(
+    title: String,
+    current: SwipeAction,
+    allApps: List<AppInfo>,
+    settings: LauncherSettings,
+    onSave: (SwipeAction) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val textColor = Color(settings.clockColor)
+    val subtleColor = textColor.copy(alpha = 0.5f)
+    var mode by remember { mutableStateOf(current.type) }
+    var urlLabel by remember {
+        mutableStateOf(if (current.type == SwipeActionType.URL) current.label else "")
+    }
+    var urlText by remember {
+        mutableStateOf(if (current.type == SwipeActionType.URL) current.url ?: "" else "")
+    }
+    var appQuery by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(settings.backgroundColor),
+        title = { Text(title, color = textColor, fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(SwipeActionType.NONE, SwipeActionType.APP, SwipeActionType.URL)
+                        .forEach { t ->
+                            val sel = mode == t
+                            Surface(
+                                modifier = Modifier.clickable { mode = t },
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (sel) textColor.copy(alpha = 0.2f) else Color.Transparent,
+                                border = if (!sel) BorderStroke(1.dp, textColor.copy(alpha = 0.2f)) else null,
+                            ) {
+                                Text(
+                                    when (t) {
+                                        SwipeActionType.NONE -> "None"
+                                        SwipeActionType.APP -> "App"
+                                        SwipeActionType.URL -> "URL"
+                                    },
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    color = textColor,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                when (mode) {
+                    SwipeActionType.NONE -> {
+                        Text(
+                            "No action assigned to this swipe.",
+                            color = subtleColor,
+                            fontSize = 13.sp,
+                        )
+                    }
+                    SwipeActionType.APP -> {
+                        OutlinedTextField(
+                            value = appQuery,
+                            onValueChange = { appQuery = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            placeholder = { Text("Search apps", color = subtleColor) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor,
+                                cursorColor = textColor,
+                                focusedBorderColor = textColor.copy(alpha = 0.5f),
+                                unfocusedBorderColor = textColor.copy(alpha = 0.2f),
+                            ),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        val filtered = if (appQuery.isBlank()) allApps
+                        else allApps.filter { it.label.contains(appQuery, ignoreCase = true) }
+                        LazyColumn(modifier = Modifier.height(280.dp)) {
+                            items(filtered) { app ->
+                                val isSel = current.type == SwipeActionType.APP &&
+                                    current.packageName == app.packageName
+                                Text(
+                                    app.label,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onSave(
+                                                SwipeAction(
+                                                    type = SwipeActionType.APP,
+                                                    packageName = app.packageName,
+                                                    label = app.label,
+                                                )
+                                            )
+                                        }
+                                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                                    color = if (isSel) Color(0xFF4CAF50) else textColor,
+                                    fontSize = 14.sp,
+                                )
+                            }
+                        }
+                    }
+                    SwipeActionType.URL -> {
+                        OutlinedTextField(
+                            value = urlLabel,
+                            onValueChange = { urlLabel = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            placeholder = { Text("Bookmark name", color = subtleColor) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor,
+                                cursorColor = textColor,
+                                focusedBorderColor = textColor.copy(alpha = 0.5f),
+                                unfocusedBorderColor = textColor.copy(alpha = 0.2f),
+                            ),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = urlText,
+                            onValueChange = { urlText = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            placeholder = { Text("https://example.com", color = subtleColor) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor,
+                                cursorColor = textColor,
+                                focusedBorderColor = textColor.copy(alpha = 0.5f),
+                                unfocusedBorderColor = textColor.copy(alpha = 0.2f),
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            when (mode) {
+                SwipeActionType.NONE -> {
+                    Text(
+                        "Clear",
+                        modifier = Modifier
+                            .clickable { onSave(SwipeAction()) }
+                            .padding(8.dp),
+                        color = textColor,
+                        fontSize = 14.sp,
+                    )
+                }
+                SwipeActionType.URL -> {
+                    val canSave = urlText.isNotBlank()
+                    Text(
+                        "Save",
+                        modifier = Modifier
+                            .clickable(enabled = canSave) {
+                                val normalized = urlText.trim().let {
+                                    if (it.contains("://")) it else "https://$it"
+                                }
+                                onSave(
+                                    SwipeAction(
+                                        type = SwipeActionType.URL,
+                                        url = normalized,
+                                        label = urlLabel.ifBlank { normalized },
+                                    )
+                                )
+                            }
+                            .padding(8.dp),
+                        color = if (canSave) textColor else subtleColor,
+                        fontSize = 14.sp,
+                    )
+                }
+                SwipeActionType.APP -> { /* selecting an app saves immediately */ }
+            }
+        },
+        dismissButton = {
+            Text(
+                "Cancel",
+                modifier = Modifier
+                    .clickable { onDismiss() }
+                    .padding(8.dp),
+                color = subtleColor,
+                fontSize = 14.sp,
+            )
+        },
+    )
 }
