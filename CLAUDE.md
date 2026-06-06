@@ -47,7 +47,7 @@ All data stored in SharedPreferences as JSON:
 - AGP 8.2.2, Kotlin 1.9.22, Compose BOM 2024.02.00
 - Build: `./gradlew assembleDebug`
 - Install on emulator: `./gradlew installDebug`
-- GitHub repo: `MarvynBailly/PhoneLauncher` (private)
+- GitHub repo: `MarvynBailly/PhoneLauncher` (public)
 - Release: `./release.sh v1.3` (or no arg for a date-based version). The script commits, builds, and creates the GitHub release with the APK.
 
 #### Versioning (required for Obtainium / OTA updates)
@@ -64,12 +64,10 @@ All data stored in SharedPreferences as JSON:
 #### Updating the phone via Obtainium
 
 The launcher self-updates through [Obtainium](https://github.com/ImranR98/Obtainium):
-1. In Obtainium → Settings → add a **GitHub Personal Access Token** (the repo is
-   private, so Obtainium can't see releases without it). A classic PAT with `repo`
-   scope, or a fine-grained token with read access to `PhoneLauncher`, works.
-2. Add app → source URL `https://github.com/MarvynBailly/PhoneLauncher`. One `.apk`
-   asset per release, so no APK filter regex is needed.
-3. Run `./release.sh vX.Y` from this machine; Obtainium picks up the new release and
+1. Add app → source URL `https://github.com/MarvynBailly/PhoneLauncher`. The repo is
+   public, so no GitHub token is needed. One `.apk` asset per release, so no APK
+   filter regex is needed either.
+2. Run `./release.sh vX.Y` from this machine; Obtainium picks up the new release and
    offers the update.
 
 Signing caveat: releases ship the **debug**-signed APK (`~/.android/debug.keystore`).
