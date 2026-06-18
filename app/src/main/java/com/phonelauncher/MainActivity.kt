@@ -78,7 +78,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.rememberCoroutineScope
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -139,6 +141,8 @@ private fun LauncherScreen(activity: MainActivity) {
     var blockMessage by remember { mutableStateOf<String?>(null) }
     var closingState by remember { mutableStateOf(loadClosingState(context)) }
     var closingIsManual by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
 
     // Timers & quick actions
     val effectiveDate = remember { getEffectiveDate(settings.dayResetHour) }
@@ -254,6 +258,29 @@ private fun LauncherScreen(activity: MainActivity) {
             return@LaunchedEffect
         }
         if (!dayState.planningDone) screen = Screen.PLANNING
+    }
+
+    // Pi goals sync: when a new day starts with no tasks, pull today's goals from Pi
+    LaunchedEffect(dayState.date) {
+        if (dayState.tasks.isEmpty() && settings.piApiUrl.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val conn = URL("${settings.piApiUrl}/api/goals").openConnection() as HttpURLConnection
+                    conn.connectTimeout = 4000
+                    conn.readTimeout = 6000
+                    val body = conn.inputStream.bufferedReader().readText()
+                    val arr = JSONObject(body).getJSONArray("goals")
+                    val titles = (0 until arr.length()).map { arr.getJSONObject(it).getString("title") }
+                    withContext(Dispatchers.Main) {
+                        if (dayState.tasks.isEmpty() && titles.isNotEmpty()) {
+                            val newTasks = titles.map { DayTask(title = it) }
+                            dayState = dayState.copy(tasks = newTasks)
+                            saveDayState(context, dayState)
+                        }
+                    }
+                } catch (_: Exception) { }
+            }
+        }
     }
 
     val apps = remember(activity.resumeCount) {
@@ -525,6 +552,28 @@ private fun LauncherScreen(activity: MainActivity) {
                     dayState = dayState.copy(planningDone = true)
                     saveDayState(context, dayState)
                     dayState.tasks.forEach { scheduleReminder(context, it) }
+                    // Sync final task list back to Pi as today's goals
+                    if (settings.piApiUrl.isNotEmpty() && settings.piApiToken.isNotEmpty()) {
+                        val url = settings.piApiUrl
+                        val token = settings.piApiToken
+                        val titles = dayState.tasks.map { it.title }
+                        coroutineScope.launch(Dispatchers.IO) {
+                            try {
+                                val payload = JSONObject().apply {
+                                    put("titles", org.json.JSONArray(titles))
+                                }.toString()
+                                val conn = URL("$url/api/goals/batch").openConnection() as HttpURLConnection
+                                conn.requestMethod = "POST"
+                                conn.setRequestProperty("Content-Type", "application/json")
+                                conn.setRequestProperty("Authorization", "Bearer $token")
+                                conn.doOutput = true
+                                conn.connectTimeout = 4000
+                                conn.readTimeout = 6000
+                                conn.outputStream.bufferedWriter().use { it.write(payload) }
+                                conn.responseCode
+                            } catch (_: Exception) { }
+                        }
+                    }
                     screen = Screen.HOME
                 }
             )

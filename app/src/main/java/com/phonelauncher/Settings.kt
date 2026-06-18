@@ -53,6 +53,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -84,6 +86,8 @@ data class LauncherSettings(
     val phoneUsageBreakdown: Boolean = true,
     val swipeLeftAction: SwipeAction = SwipeAction(),
     val swipeRightAction: SwipeAction = SwipeAction(),
+    val piApiUrl: String = "",
+    val piApiToken: String = "",
 )
 
 data class ThemePreset(
@@ -157,6 +161,8 @@ fun loadSettings(context: Context): LauncherSettings {
                 ?: defaults.swipeLeftAction,
             swipeRightAction = j.optJSONObject("swipeRightAction")?.let(::swipeActionFromJson)
                 ?: defaults.swipeRightAction,
+            piApiUrl = j.optString("piApiUrl", defaults.piApiUrl),
+            piApiToken = j.optString("piApiToken", defaults.piApiToken),
         )
     } catch (_: Exception) {
         LauncherSettings()
@@ -207,6 +213,8 @@ fun saveSettings(context: Context, settings: LauncherSettings) {
         put("phoneUsageBreakdown", settings.phoneUsageBreakdown)
         put("swipeLeftAction", swipeActionToJson(settings.swipeLeftAction))
         put("swipeRightAction", swipeActionToJson(settings.swipeRightAction))
+        put("piApiUrl", settings.piApiUrl)
+        put("piApiToken", settings.piApiToken)
     }
     context.getSharedPreferences("launcher_settings", Context.MODE_PRIVATE)
         .edit().putString("settings", json.toString()).apply()
@@ -557,6 +565,62 @@ fun SettingsScreen(
                 onDismiss = { editingDirection = null },
             )
         }
+
+        Spacer(Modifier.height(32.dp))
+
+        // Pi Integration
+        SectionLabel("PI INTEGRATION", subtleColor)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Connect to your Pi to sync daily goals",
+            color = subtleColor,
+            fontSize = 12.sp
+        )
+        Spacer(Modifier.height(12.dp))
+
+        var piUrlEdit by remember { mutableStateOf(settings.piApiUrl) }
+        var piTokenEdit by remember { mutableStateOf(settings.piApiToken) }
+        OutlinedTextField(
+            value = piUrlEdit,
+            onValueChange = {
+                piUrlEdit = it
+                onSettingsChanged(settings.copy(piApiUrl = it.trim()))
+            },
+            label = { Text("Pi API URL", fontSize = 12.sp) },
+            placeholder = { Text("https://raspberrypi.tail0bf0ce.ts.net:8443", fontSize = 12.sp) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = textColor,
+                unfocusedTextColor = textColor,
+                focusedBorderColor = textColor.copy(alpha = 0.5f),
+                unfocusedBorderColor = textColor.copy(alpha = 0.2f),
+                focusedLabelColor = subtleColor,
+                unfocusedLabelColor = subtleColor,
+                cursorColor = textColor,
+            )
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = piTokenEdit,
+            onValueChange = {
+                piTokenEdit = it
+                onSettingsChanged(settings.copy(piApiToken = it.trim()))
+            },
+            label = { Text("Pi API Token", fontSize = 12.sp) },
+            placeholder = { Text("Bearer token from Pi .env", fontSize = 12.sp) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = textColor,
+                unfocusedTextColor = textColor,
+                focusedBorderColor = textColor.copy(alpha = 0.5f),
+                unfocusedBorderColor = textColor.copy(alpha = 0.2f),
+                focusedLabelColor = subtleColor,
+                unfocusedLabelColor = subtleColor,
+                cursorColor = textColor,
+            )
+        )
 
         Spacer(Modifier.height(32.dp))
 
