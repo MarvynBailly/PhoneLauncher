@@ -1,14 +1,20 @@
-name: Build and Release
+name: CI Build
+
+# Build-only sanity check. Releases are cut from the maintainer's machine via
+# release.sh so the APK is signed with the stable local debug keystore that
+# matches existing installs (required for in-place Obtainium/OTA upgrades).
+# A GitHub runner generates a fresh debug keystore per run, so CI must NOT
+# publish APKs or Obtainium updates would fail with a signature mismatch.
 
 on:
   push:
+    branches: [ main, master ]
+  pull_request:
     branches: [ main, master ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -32,25 +38,3 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-
-      - name: Get version string
-        id: version
-        run: echo "version=v$(date -u +'%Y%m%d.%H%M')" >> $GITHUB_OUTPUT
-
-      - name: Delete previous rolling release
-        run: gh release delete latest --yes 2>/dev/null || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Delete previous rolling tag
-        run: git push origin :refs/tags/latest 2>/dev/null || true
-
-      - name: Create release
-        run: |
-          gh release create latest \
-            app/build/outputs/apk/debug/app-debug.apk \
-            --title "Launcher ${{ steps.version.outputs.version }}" \
-            --notes "Built from commit ${{ github.sha }} on ${{ github.ref_name }}." \
-            --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
