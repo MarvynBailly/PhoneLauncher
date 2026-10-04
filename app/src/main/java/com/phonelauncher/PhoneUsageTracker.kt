@@ -27,8 +27,8 @@ private data class FgSegment(val pkg: String, val startMs: Long, val endMs: Long
 
 /**
  * Back-fills a "Phone usage" parent timer + per-app sub-timers for the window since
- * the last launcher onPause, and truncates any running task timer's current segment
- * so it doesn't accumulate time spent away from the launcher (auto-pause / auto-resume).
+ * the last launcher onPause, and removes time spent in other apps from any running
+ * task timer (auto-pause / auto-resume). Screen-off time is not removed.
  */
 fun syncPhoneUsage(
     context: Context,
@@ -40,29 +40,23 @@ fun syncPhoneUsage(
     clearLastPause(context)
     if (lastPause <= 0 || now - lastPause < 2_000) return timers
 
-    // Auto-pause / auto-resume any running task timer so it doesn't accumulate
-    // time spent away from the launcher. Runs even when phone-usage tracking is
-    // off or usage-stats permission is missing — those only gate the per-app
-    // breakdown, not the basic away-time exclusion.
-    val phoneUsageParentId = timers.find {
-        it.name == PHONE_USAGE_TIMER_NAME && it.parentId == null
-    }?.id
-    val truncated = timers.map { t ->
-        val isPhoneUsage = t.name == PHONE_USAGE_TIMER_NAME ||
-            (phoneUsageParentId != null && t.parentId == phoneUsageParentId)
-        if (t.isRunning && !isPhoneUsage && t.startedAt < lastPause) {
-            t.copy(
-                segments = t.segments + TimeSegment(t.startedAt, lastPause),
-                startedAt = now,
-            )
-        } else t
-    }
-
-    if (!settings.trackPhoneUsage) return truncated
-    if (!hasUsageStatsPermission(context)) return truncated
+    // Without usage access there is no way to tell screen-off time (which should
+    // count) from time in other apps (which should not), so keep all of it.
+    if (!hasUsageStatsPermission(context)) return timers
 
     val self = context.packageName
     val segments = collectForegroundSegments(context, lastPause, now).filter { it.pkg != self }
+
+    // Cut only the time other apps were in the foreground out of running task
+    // timers. Runs even when phone-usage tracking is off; that setting only gates
+    // the Phone usage timers below.
+    val away = segments.map { TimeSegment(it.startMs, it.endMs) }
+    val phoneUsage = timers.phoneUsageIds()
+    val truncated = timers.map { t ->
+        if (t.id !in phoneUsage) t.excludeIntervals(away, now) else t
+    }
+
+    if (!settings.trackPhoneUsage) return truncated
     if (segments.isEmpty()) return truncated
 
     val pm = context.packageManager

@@ -160,10 +160,7 @@ fun TimerDetailDialog(
                     set(Calendar.HOUR_OF_DAY, h); set(Calendar.MINUTE, m); set(Calendar.SECOND, 0)
                 }
                 val updated = segments.toMutableList()
-                updated[editingSegIdx] = if (editingStart)
-                    seg.copy(startMs = newCal.timeInMillis)
-                else
-                    seg.copy(endMs = newCal.timeInMillis)
+                updated[editingSegIdx] = seg.withEditedTime(editingStart, newCal.timeInMillis)
                 segments = updated
                 onUpdateSegments(updated)
                 editingSegIdx = -1
