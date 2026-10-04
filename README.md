@@ -10,6 +10,15 @@ No icons, no feeds, no badges. Just a clock, your tasks for today, the timers yo
 [![CI Build](https://github.com/MarvynBailly/PhoneLauncher/actions/workflows/release.yml/badge.svg)](https://github.com/MarvynBailly/PhoneLauncher/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/MarvynBailly/PhoneLauncher)](https://github.com/MarvynBailly/PhoneLauncher/releases/latest)
 
+<p align="center">
+  <img src="docs/screenshots/home.png" width="250" alt="Home screen with timers, counters, tasks, and pinned apps">
+  &nbsp;
+  <img src="docs/screenshots/planning.png" width="250" alt="Morning planning screen">
+  &nbsp;
+  <img src="docs/screenshots/day-review.png" width="250" alt="Day Review screen">
+</p>
+<p align="center"><sub>Home &nbsp;|&nbsp; Morning planning &nbsp;|&nbsp; Day Review</sub></p>
+
 ---
 
 ## How a day works
@@ -61,6 +70,13 @@ No icons, no feeds, no badges. Just a clock, your tasks for today, the timers yo
 
 ### Pi goal sync (optional)
 - Point the launcher at a self-hosted API (URL + token in Settings). On a new day it pulls today's goals as tasks, and after planning it pushes the final task list back.
+
+## Screenshots
+
+| Timer sessions | Search | Settings | Ocean theme |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/screenshots/timer-sessions.png" width="190" alt="Timer session timeline with editable times"> | <img src="docs/screenshots/search.png" width="190" alt="App search showing pinned and locked apps"> | <img src="docs/screenshots/settings.png" width="190" alt="Settings with theme presets and pinned apps"> | <img src="docs/screenshots/theme-ocean.png" width="190" alt="Home screen in the Ocean theme"> |
+| Editable start and end times for each session | Pinned apps are labelled; restricted apps show as locked | Theme presets, pinned app order, font sizes | One of five built-in themes |
 
 ## Install
 
