@@ -90,7 +90,7 @@ fun NightlyClosingScreen(
 
     // Timer stats
     val now = System.currentTimeMillis()
-    val totalTimerMs = timers.sumOf { it.elapsed(now) }
+    val totalTimerMs = trackedTime(timers, now)
 
     fun buildClosingState(): ClosingState {
         val notes = incompleteTasks.map { task ->

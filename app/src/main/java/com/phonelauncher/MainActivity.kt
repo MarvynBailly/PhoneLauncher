@@ -217,13 +217,12 @@ private fun LauncherScreen(activity: MainActivity) {
         val newTasks = generateDayTasks(templates) + carryForwardTasks
         dayState = DayState(date = today, tasks = newTasks, planningDone = false)
         saveDayState(context, dayState)
-        val phoneUsageParentId = timers.find {
-            it.name == PHONE_USAGE_TIMER_NAME && it.parentId == null
-        }?.id
-        timers.filter { it.name != PHONE_USAGE_TIMER_NAME && it.parentId != phoneUsageParentId }
+        val phoneUsage = timers.phoneUsageIds()
+        timers.filter { it.id !in phoneUsage }
             .forEach { addToHistory(context, it.name) }
         timerHistory = loadTimerHistory(context)
-        timers = emptyList()
+        // Keep timers that are still running so they don't silently stop at the reset.
+        timers = carryRunningTimers(timers, getDayStartMs(settings.dayResetHour))
         saveTimers(context, timers)
         quickActions = emptyList()
         saveQuickActions(context, quickActions, today)
@@ -483,16 +482,13 @@ private fun LauncherScreen(activity: MainActivity) {
     }
 
     fun startTimer(name: String, taskId: String?, parentId: String?, dnd: Boolean) {
-        // Resume existing paused timer with same name, but never resume the
-        // auto-managed Phone usage parent or its sub-timers — those are
-        // continuously forced back to paused by syncPhoneUsage.
-        val phoneUsageParentId = timers.find {
-            it.name == PHONE_USAGE_TIMER_NAME && it.parentId == null
-        }?.id
+        // Resume an existing paused timer with the same name under the same parent,
+        // but never resume the auto-managed Phone usage parent or its sub-timers;
+        // those are continuously forced back to paused by syncPhoneUsage.
+        val phoneUsage = timers.phoneUsageIds()
         val existing = timers.find {
-            it.name == name && !it.isRunning &&
-                it.name != PHONE_USAGE_TIMER_NAME &&
-                (phoneUsageParentId == null || it.parentId != phoneUsageParentId)
+            it.name == name && it.parentId == parentId && !it.isRunning &&
+                it.name != PHONE_USAGE_TIMER_NAME && it.id !in phoneUsage
         }
         if (existing != null) {
             timers = timers.map { if (it.id == existing.id) it.resume() else it }

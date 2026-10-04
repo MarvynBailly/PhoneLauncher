@@ -46,6 +46,83 @@ fun TimerEntry.resume(): TimerEntry {
     return copy(startedAt = System.currentTimeMillis(), isRunning = true)
 }
 
+/**
+ * Removes the [away] intervals (time spent in other apps) from a running timer's
+ * current session. Time outside them, including screen-off time, is kept: the
+ * session is split into closed segments around each interval and keeps running
+ * from the end of the last one.
+ */
+fun TimerEntry.excludeIntervals(away: List<TimeSegment>, now: Long): TimerEntry {
+    if (!isRunning) return this
+    var cursor = startedAt
+    val kept = mutableListOf<TimeSegment>()
+    for (a in away.sortedBy { it.startMs }) {
+        if (a.endMs <= cursor) continue
+        if (a.startMs > now) break
+        if (a.startMs > cursor) kept += TimeSegment(cursor, a.startMs)
+        cursor = maxOf(cursor, a.endMs)
+    }
+    return copy(segments = segments + kept, startedAt = minOf(cursor, now))
+}
+
+private const val DAY_MS = 24 * 60 * 60 * 1000L
+
+/**
+ * Applies an edited start or end time to a session. The time picker keeps the
+ * original date, so an end before the start means the session crossed midnight
+ * (and a start after the end means it began the previous day).
+ */
+fun TimeSegment.withEditedTime(editingStart: Boolean, newMs: Long): TimeSegment =
+    if (editingStart) copy(startMs = if (newMs > endMs) newMs - DAY_MS else newMs)
+    else copy(endMs = if (newMs < startMs) newMs + DAY_MS else newMs)
+
+/** Ids of the auto-managed "Phone usage" parent timer and its per-app sub-timers. */
+fun List<TimerEntry>.phoneUsageIds(): Set<String> {
+    val parentId = find { it.name == PHONE_USAGE_TIMER_NAME && it.parentId == null }?.id
+        ?: return emptySet()
+    return filter { it.id == parentId || it.parentId == parentId }.map { it.id }.toSet()
+}
+
+/**
+ * Wall-clock time covered by at least one user timer. Overlapping timers (a parent
+ * and its sub-timer, or two timers running together) are counted once, and the
+ * auto-managed phone-usage timers are left out.
+ */
+fun trackedTime(timers: List<TimerEntry>, now: Long): Long {
+    val skip = timers.phoneUsageIds()
+    val intervals = timers.filter { it.id !in skip }.flatMap { t ->
+        t.segments + if (t.isRunning) listOf(TimeSegment(t.startedAt, now)) else emptyList()
+    }.filter { it.endMs > it.startMs }.sortedBy { it.startMs }
+    var total = 0L
+    var curStart = -1L
+    var curEnd = -1L
+    for (i in intervals) {
+        if (i.startMs > curEnd) {
+            total += curEnd - curStart
+            curStart = i.startMs
+            curEnd = i.endMs
+        } else {
+            curEnd = maxOf(curEnd, i.endMs)
+        }
+    }
+    return total + (curEnd - curStart)
+}
+
+/**
+ * Timers that survive a day reset: running user timers restart at [dayStartMs]
+ * (their earlier time belongs to the day that just closed), and any parent of a
+ * running sub-timer is kept, paused and empty, so the sub-timer is not orphaned.
+ */
+fun carryRunningTimers(timers: List<TimerEntry>, dayStartMs: Long): List<TimerEntry> {
+    val skip = timers.phoneUsageIds()
+    val running = timers.filter { it.isRunning && it.id !in skip }
+    val parentIds = running.mapNotNull { it.parentId }.toSet()
+    return timers.filter { (it.isRunning && it.id !in skip) || it.id in parentIds }.map { t ->
+        if (t.isRunning) t.copy(segments = emptyList(), startedAt = maxOf(t.startedAt, dayStartMs))
+        else t.copy(segments = emptyList())
+    }
+}
+
 fun formatElapsed(ms: Long): String {
     val total = maxOf(0, ms / 1000)
     val h = total / 3600
